@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use revm::primitives::bytes::Bytes;
 use ethers::{
     abi::{self, parse_abi},
     prelude::*,
@@ -9,7 +8,9 @@ use ethers::{
         NameOrAddress, H160, U256,
     },
 };
+use gas_oracle::middleware;
 use log::info;
+use revm::primitives::bytes::Bytes;
 use revm::{
     db::{CacheDB, EmptyDB, EthersDB, InMemoryDB},
     primitives::Bytecode,
@@ -45,7 +46,6 @@ pub fn evm_env_setup(evm: &mut EVM<InMemoryDB>) {
 
 //We’ll try calling the ERC-20 function “balanceOf” to check how much of the token balance our simulated user holds
 pub fn get_token_balance(evm: &mut EVM<InMemoryDB>, token: H160, account: H160) -> Result<U256> {
-    
     //First, we create the BaseContract instance from a simple ERC-20 ABI that contains a single function definition:
     let erc20_abi = BaseContract::from(parse_abi(&[
         "function balanceOf(address) external view returs (uint256)",
@@ -99,10 +99,65 @@ pub fn get_token_balance(evm: &mut EVM<InMemoryDB>, token: H160, account: H160) 
         ExecutionResult::Halt {
             reason, gas_used, ..
         } => return Err(anyhow!("EVM HALT: {:?} / Gas used: {:?}", reason, gas_used)),
-
     };
     let decoded_output = erc20_abi.decode_output("balanceOf", tx_result.output)?;
     Ok(decoded_output)
 }
 
+pub async fn revm_contract_deploy_and_tracing<M: Middleware + 'static>(
+    evm: &mut EVM<InMemoryDB>,
+    provider: Arc<M>,
+    token: H160,
+    account: H160,
+) -> Result<i32> {
+    //deploy contract to EVM
+    let block = provider
+        .get_block(BlockNumber::Latest)
+        .await?
+        .ok_or(anyhow!("failed to retrieve block"))?;
 
+    let mut ethersdb = EthersDB::new(provider.clone(), Some(block.number.unwrap().into())).unwrap();
+
+    let token_acc_info = ethersdb.basic(token.into()).unwrap().unwrap();
+
+    evm.db
+        .as_mut()
+        .unwrap()
+        .insert_account_info(token.into(), token_acc_info);
+
+    let erc20_abi = BaseContract::from(parse_abi(&[
+        "function balanceOf(address) external view returns= (uint256)",
+    ])?);
+
+    let calldata = erc20_abi.encode("balanceOf", account)?;
+
+    evm.env.tx.caller = account.into();
+    evm.env.tx.transact_to = TransactTo::Call(token.into());
+    evm.env.tx.data = calldata.0.clone();
+
+    let result = match evm.transact_ref() {
+        Ok(result) => result,
+        Err(e) => return Err(anyhow!("EVM call failed: {e:?}")),
+    };
+    let token_b160: B160 = token.into();
+    let token_acc = result.state.get(&token_b160).unwrap();
+    let token_touched_storage = token_acc.storage.clone();
+    info!("touched storage slots: {:?}", token_touched_storage);
+
+    for i in 0..20 {
+        let slot = keccak256(&abi::encode(&[
+            abi::Token::Address((account.into())),
+            abi::Token::Uint(U256::from(i)),
+        ]));
+        let slot: rU256 = U256::from(slot).into();
+        match token_touched_storage.get(&slot) {
+            Some(_) => {
+                info!("Balance storage slot: {:?} ({:?})", i, slot);
+                return Ok(i);
+            }
+            None => {}
+        }
+    }
+
+    Ok(0)
+}

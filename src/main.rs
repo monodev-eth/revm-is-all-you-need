@@ -7,7 +7,9 @@ use log::info;
 use std::{str::FromStr, sync::Arc};
 
 use revm_is_all_you_need::constants::Env;
-use revm_is_all_you_need::revm_examples::{create_evm_instance, evm_env_setup, get_token_balance};
+use revm_is_all_you_need::revm_examples::{
+    create_evm_instance, evm_env_setup, get_token_balance, revm_contract_deploy_and_tracing,
+};
 use revm_is_all_you_need::utils::setup_logger;
 
 #[tokio::main]
@@ -18,6 +20,10 @@ async fn main() -> Result<()> {
     let mut evm = create_evm_instance();
     evm_env_setup(&mut evm);
 
+    let env = Env::new();
+    let ws = Ws::connect(&env.wss_url).await.unwrap();
+    let provider = Arc::new(Provider::new(ws));
+
     let user = H160::from_str("0xE2b5A9c1e325511a227EF527af38c3A7B65AFA1d").unwrap();
 
     let weth = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
@@ -27,6 +33,11 @@ async fn main() -> Result<()> {
 
     let weth_balance = get_token_balance(&mut evm, weth, user);
     info!("WETH balance: {:?}", weth_balance);
+
+    match revm_contract_deploy_and_tracing(&mut evm, provider.clone(), weth, user).await {
+        Ok(_) => {}
+        Err(e) => info!("Tracing error: {e:?}"),
+    }
 
     Ok(())
 }
