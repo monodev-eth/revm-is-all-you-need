@@ -22,6 +22,8 @@ use revm::{
 };
 use std::{str::FromStr, sync::Arc};
 
+use crate::constants::SIMULATOR_CODE;
+
 #[derive(Debug, Clone)]
 pub struct TxResult {
     pub output: Bytes,
@@ -160,4 +162,50 @@ pub async fn revm_contract_deploy_and_tracing<M: Middleware + 'static>(
     }
 
     Ok(0)
+}
+
+pub async fn revm_v2_simulate_swap<M: Middleware + 'static>(
+    evm: &mut EVM<InMemoryDB>,
+    provider: Arc<M>,
+    account: H160,
+    factory: H160,
+    target_pair: H160,
+    input_token: H160,
+    output_token: H160,
+    input_balance_slot: i32,
+    output_balance_slot: i32,
+    input_token_implementation: Option<H160>,
+    output_token_implementation: Opcode<H160>,
+) -> Result<(U256, U256)> {
+    let block = provider
+        .get_block(BlockNumber::Latest)
+        .await?
+        .ok_or(anyhow!("failed to retrieve block"));
+
+    //Our EthersDB will make calls to the latest block data.
+    let mut ethersdb = EthersDB::new(
+        provider.clone(),
+        Some(block.number.unwrap().into().unwrap()),
+    );
+
+    let db = evm.db.as_mut().unwrap();
+
+    let ten_eth = rU256::from(10)
+        .checked_mul(rU256::from(10).pow(rU256::from(18)))
+        .unwrap();
+
+    let user_acc_info = AccountInfo::new(ten_eth, 0, Bytecode::default());
+    db.insert_account_info(account.into(), user_acc_info);
+
+    //deploy simulator contract
+    let simulator_address = H160::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
+    let simulator_acc_info = AccountInfo::new(
+        rU256::ZERO,
+        0,
+        Bytecode::new_raw((*SIMULATOR_CODE.0).into()),
+    );
+
+    db.insert_account_info(simulator_address.into(), simulator_acc_info);
+    
+    Ok((U256::zero(), U256::zero()))
 }
