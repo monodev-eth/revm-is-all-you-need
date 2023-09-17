@@ -6,11 +6,15 @@ use ethers::{
 use log::info;
 use std::{str::FromStr, sync::Arc};
 
-use revm_is_all_you_need::constants::Env;
 use revm_is_all_you_need::revm_examples::{
     create_evm_instance, evm_env_setup, get_token_balance, revm_contract_deploy_and_tracing,
+    revm_v2_simulate_swap,
 };
+
+use revm_is_all_you_need::eth_call_examples::eth_call_v2_simulate_swap;
+use revm_is_all_you_need::tokens::get_implementation;
 use revm_is_all_you_need::utils::setup_logger;
+use revm_is_all_you_need::{constants::Env, foundry_example::foundry_v2_simulate_swap};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -37,6 +41,81 @@ async fn main() -> Result<()> {
     match revm_contract_deploy_and_tracing(&mut evm, provider.clone(), weth, user).await {
         Ok(_) => {}
         Err(e) => info!("Tracing error: {e:?}"),
+    }
+
+    let block = provider
+        .get_block(BlockNumber::Latest)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let uniswap_v2_factory = H160::from_str("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap();
+    let weth_usdt_pair = H160::from_str("0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852").unwrap();
+
+    let weth_balance_slot =
+        revm_contract_deploy_and_tracing(&mut evm, provider.clone(), weth, user)
+            .await
+            .unwrap();
+    let usdt_balance_slot =
+        revm_contract_deploy_and_tracing(&mut evm, provider.clone(), usdt, user)
+            .await
+            .unwrap();
+
+    let weth_implementation = get_implementation(provider.clone(), weth, block.number.unwrap())
+        .await
+        .unwrap();
+    let usdt_implementation = get_implementation(provider.clone(), usdt, block.number.unwrap())
+        .await
+        .unwrap();
+
+    info!("WETH proxy: {:?}", weth_implementation);
+    info!("USDT proxy: {:?}", usdt_implementation);
+
+    match revm_v2_simulate_swap(
+        &mut evm,
+        provider.clone(),
+        user,
+        uniswap_v2_factory,
+        weth_usdt_pair,
+        weth,
+        usdt,
+        weth_balance_slot,
+        usdt_balance_slot,
+        weth_implementation,
+        usdt_implementation,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(e) => info!("v2SimulateSwap revm failed: {e:?}"),
+    }
+
+    match foundry_v2_simulate_swap(
+        provider.clone(),
+        user,
+        weth_usdt_pair,
+        weth,
+        usdt,
+        weth_balance_slot,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(e) => info!("v2SimulateSwap foundry evm failed: {e:?}"),
+    }
+
+    match eth_call_v2_simulate_swap(
+        provider.clone(),
+        user,
+        weth_usdt_pair,
+        weth,
+        usdt,
+        weth_balance_slot,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(e) => info!("v2SimulateSwap eth_call failed: {e:?}"),
     }
 
     Ok(())

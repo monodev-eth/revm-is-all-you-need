@@ -36,7 +36,7 @@ pub async fn get_implementation<M: Middleware + 'static>(
         let _provider = provider.clone();
         let fut = tokio::spawn(async move {
             _provider
-                .get_storage_at(token, TxHash::from_uint, Some(block_number).into())
+                .get_storage_at(token, TxHash::from_uint(&slot), Some(block_number.into()))
                 .await
         });
         set.spawn(fut);
@@ -46,7 +46,7 @@ pub async fn get_implementation<M: Middleware + 'static>(
         let out = res???;
         let implemantation = H160::from(out);
         if implemantation != *ZERO_ADDRESS {
-            return Ok(Some((implemantation)));
+            return Ok(Some(implemantation));
         }
     }
 
