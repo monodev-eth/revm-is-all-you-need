@@ -30,11 +30,13 @@ pub async fn foundry_v2_simulate_swap<M: Middleware + 'static>(
     output_token: H160,
     input_balance_slot: i32,
 ) -> Result<(U256, U256)> {
+    println!("RUNNING OUR CUSTOM MAINNET SWAP ----------------------------");
     let block = provider
         .get_block(BlockNumber::Latest)
         .await?
         .ok_or(anyhow!("failed to retrieve block"))?;
 
+    //Getting blockchains context and state
     let shared_backend = SharedBackend::spawn_backend_thread(
         provider.clone(),
         BlockchainDb::new(
@@ -60,6 +62,7 @@ pub async fn foundry_v2_simulate_swap<M: Middleware + 'static>(
 
     let fork_db = evm.db.as_mut().unwrap();
 
+    // Defining what 10 ETH is with decimals and all
     let ten_eth = rU256::from(10)
         .checked_mul(rU256::from(10).pow(rU256::from(18)))
         .unwrap();
@@ -68,45 +71,64 @@ pub async fn foundry_v2_simulate_swap<M: Middleware + 'static>(
     let user_acc_info = AccountInfo::new(ten_eth, 0, Bytecode::default());
     fork_db.insert_account_info(account.into(), user_acc_info);
 
+    println!("Interted user_acc_info");
     // Deploy Simulator contract
-    let simulator_address = H160::from_str("0xF2d01Ee818509a9540d8324a5bA52329af27D19E").unwrap();
-    let simulator_acc_info = AccountInfo::new(
-        rU256::ZERO,
-        0,
-        Bytecode::new_raw((*SIMULATOR_CODE.0).into()),
-    );
-    fork_db.insert_account_info(simulator_address.into(), simulator_acc_info);
+    let simulator_address = H160::from_str("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap();
+    // let simulator_acc_info = AccountInfo::new(
+    //     rU256::ZERO,
+    //     0,
+    //     Bytecode::new_raw((*SIMULATOR_CODE.0).into()),
+    // );
+    // fork_db.insert_account_info(simulator_address.into(), simulator_acc_info);
 
-    let balance_slot = keccak256(&abi::encode(&[
-        abi::Token::Address(simulator_address.into()),
-        abi::Token::Uint(U256::from(input_balance_slot)),
-    ]));
-    fork_db.insert_account_storage(input_token.into(), balance_slot.into(), ten_eth)?;
+    // let balance_slot = keccak256(&abi::encode(&[
+    //     abi::Token::Address(simulator_address.into()),
+    //     abi::Token::Uint(U256::from(input_balance_slot)),
+    // ]));
+    // fork_db.insert_account_storage(input_token.into(), balance_slot.into(), ten_eth)?;
 
     // run v2SimulateSwap
+    // The amount in for the token you want (ETH or token? )
     let amount_in = U256::from(1)
         .checked_mul(U256::from(10).pow(U256::from(18)))
         .unwrap();
+    println!("HELP1");
     let simulator_abi = BaseContract::from(
         parse_abi(&[
-            "function v2SimulateSwap(uint256,address,address,address) external returns (uint256, uint256)",
+            "function swapExactETHForTokens(uint,address[],address,uint) external returns (uint[])",
         ])?
     );
+    //     "function v2SimulateSwap(uint256,address,address,address) external returns (uint256, uint256)",
+    println!("HELP2");
+    println!("{:?}", simulator_abi);
+    println!("{:?}", amount_in);
+    println!("{:?}", input_token);
+    println!("{:?}", output_token);
+    println!("{:?}", account);
+    println!("{:?}", 0);
+ println!("{:?}", 0);
     let calldata = simulator_abi.encode(
-        "v2SimulateSwap",
-        (amount_in, target_pair, input_token, output_token),
+        "swapExactETHForTokens",
+        (U256::zero(), [input_token, output_token], account, U256::from(999999999)),
     )?;
-
+    println!("HELP3");
+    println!("{:?}", calldata);
+    // Gass price is 100 wei?
     let gas_price = rU256::from(100)
         .checked_mul(rU256::from(10).pow(rU256::from(9)))
         .unwrap();
+
+
+   
+       
+    let one_eth = ten_eth.checked_div(rU256::from(10)).unwrap();
     let v2_simulate_swap_tx = TxEnv {
         caller: account.into(),
         gas_limit: 5000000,
         gas_price: gas_price,
         gas_priority_fee: None,
         transact_to: TransactTo::Call(simulator_address.into()),
-        value: rU256::ZERO,
+        value: one_eth,
         data: calldata.0,
         chain_id: None,
         nonce: None,
@@ -119,7 +141,7 @@ pub async fn foundry_v2_simulate_swap<M: Middleware + 'static>(
         Err(e) => return Err(anyhow!("EVM call failed: {:?}", e)),
     };
     let result = get_tx_result(result)?;
-    let out: (U256, U256) = simulator_abi.decode_output("v2SimulateSwap", result.output)?;
+    let out: (U256, U256) = simulator_abi.decode_output("swapExactETHForTokens", result.output)?;
     info!("Amount out: {:?}", out);
 
     Ok(out)

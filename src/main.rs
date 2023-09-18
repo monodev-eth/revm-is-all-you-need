@@ -71,24 +71,24 @@ async fn main() -> Result<()> {
     info!("WETH proxy: {:?}", weth_implementation);
     info!("USDT proxy: {:?}", usdt_implementation);
 
-    match revm_v2_simulate_swap(
-        &mut evm,
-        provider.clone(),
-        user,
-        uniswap_v2_factory,
-        weth_usdt_pair,
-        weth,
-        usdt,
-        weth_balance_slot,
-        usdt_balance_slot,
-        weth_implementation,
-        usdt_implementation,
-    )
-    .await
-    {
-        Ok(_) => {}
-        Err(e) => info!("v2SimulateSwap revm failed: {e:?}"),
-    }
+    // match revm_v2_simulate_swap(
+    //     &mut evm,
+    //     provider.clone(),
+    //     user,
+    //     uniswap_v2_factory,
+    //     weth_usdt_pair,
+    //     weth,
+    //     usdt,
+    //     weth_balance_slot,
+    //     usdt_balance_slot,
+    //     weth_implementation,
+    //     usdt_implementation,
+    // )
+    // .await
+    // {
+    //     Ok(_) => {}
+    //     Err(e) => info!("v2SimulateSwap revm failed: {e:?}"),
+    // }
 
     match foundry_v2_simulate_swap(
         provider.clone(),
@@ -104,19 +104,19 @@ async fn main() -> Result<()> {
         Err(e) => info!("v2SimulateSwap foundry evm failed: {e:?}"),
     }
 
-    match eth_call_v2_simulate_swap(
-        provider.clone(),
-        user,
-        weth_usdt_pair,
-        weth,
-        usdt,
-        weth_balance_slot,
-    )
-    .await
-    {
-        Ok(_) => {}
-        Err(e) => info!("v2SimulateSwap eth_call failed: {e:?}"),
-    }
+    // match eth_call_v2_simulate_swap(
+    //     provider.clone(),
+    //     user,
+    //     weth_usdt_pair,
+    //     weth,
+    //     usdt,
+    //     weth_balance_slot,
+    // )
+    // .await
+    // {
+    //     Ok(_) => {}
+    //     Err(e) => info!("v2SimulateSwap eth_call failed: {e:?}"),
+    // }
 
     Ok(())
 }
